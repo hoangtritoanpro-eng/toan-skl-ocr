@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống OCR Toán SKYLINE</title>
+    <!-- Nhúng TailwindCSS CDN thay vì cài đặt rườm rà (thích hợp cho Web chạy tĩnh) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #fafafa; }
+    </style>
+</head>
+<body class="p-8">
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+        <h1 class="text-3xl font-extrabold text-blue-900 text-center mb-6 drop-shadow-sm">📐 HỆ THỐNG OCR TOÁN SKYLINE BẰNG AI</h1>
+        <p class="text-center text-gray-600 mb-8 font-medium">Giải pháp Số hoá Đề thi Toán học chuẩn dạng LaTeX và bóc tách cấu trúc Trắc nghiệm tự động.</p>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Khu vực thiết lập Cấu hình (Sidebar Setup) -->
+            <div class="md:col-span-1 bg-slate-50 p-5 rounded-xl border border-slate-200 h-fit">
+                <h2 class="text-lg font-bold mb-4 text-slate-800 border-b pb-2">⚙️ Cấu Hình Nhanh</h2>
+                <div class="mb-5">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">🔑 GEMINI API Key:</label>
+                    <input type="password" id="apiKey" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 outline-none focus:ring-2 focus:ring-blue-500 border transition" placeholder="Nhập API Key...">
+                </div>
+                <div class="mb-5">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">📂 File PDF Đề Toán:</label>
+                    <input type="file" id="pdfFile" accept="application/pdf" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition cursor-pointer">
+                </div>
+                <button id="processBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all active:scale-95 flex justify-center items-center gap-2">
+                    🚀 Bắt đầu Nhận diện
+                </button>
+            </div>
+            
+            <!-- Khu vực Hiển thị Kết quả (Result Area) -->
+            <div class="md:col-span-2 flex flex-col justify-start">
+                
+                <!-- Box Hướng dẫn Ban đầu -->
+                <div id="introBox" class="bg-blue-50 text-blue-800 p-6 rounded-xl border border-blue-200">
+                    <h3 class="font-bold mb-2">💡 Hướng dẫn sử dụng trên Vercel:</h3>
+                    <ul class="list-disc pl-5 space-y-1 text-sm">
+                        <li>Dán khóa API của thầy vào ô bên trái.</li>
+                        <li>Tải file PDF chứa câu hỏi Toán học lên.</li>
+                        <li><b>Lưu ý cực quan trọng:</b> Tại vì Vercel tài khoản Hobby (Free) có giới hạn thời gian (Timeout 10 giây). Do đó, thầy <b>CHỈ NÊN UP TỪNG TRANG PDF MỘT (tối đa 2 trang)</b> để không bị sập server.</li>
+                    </ul>
+                </div>
+
+                <!-- Box Loading Wait -->
+                <div id="loading" class="hidden flex-col justify-center items-center p-12 bg-gray-50 rounded-xl border border-gray-100">
+                   <!-- Icon Spinner -->
+                   <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                   <p class="text-base text-gray-700 font-medium animate-pulse">Server AI đang chạy OCR và đúc ra JSON...</p>
+                   <p class="text-xs text-red-500 mt-2">Xin đừng đóng tab (tối đa 10s-30s).</p>
+                </div>
+                
+                <!-- Box Hiển Nhận Kết quả (Thành công) -->
+                <div id="result" class="hidden flex flex-col gap-4 mt-2">
+                    <div class="p-4 bg-green-50 border border-green-200 text-green-700 rounded-xl shadow-sm flex items-start gap-3">
+                        <span class="text-2xl">✅</span>
+                        <div>
+                            <h4 class="font-bold">Đã phân tích Trắc nghiệm thành công!</h4>
+                            <p class="text-sm">Hệ thống đã bắt chính xác cấu trúc A B C D (dữ liệu LaTeX). Thầy tải xuống file JSON ở bên dưới.</p>
+                        </div>
+                    </div>
+                    
+                    <button id="downloadBtn" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all active:scale-95 inline-flex items-center w-max mx-auto mt-4">
+                        <span class="mr-2">💾</span> Tải về File JSON Câu hỏi
+                    </button>
+                </div>
+                
+                <!-- Box Thông Báo Lỗi -->
+                <div id="errorBox" class="hidden mt-4 p-5 bg-red-50 border border-red-200 text-red-800 rounded-xl whitespace-pre-wrap text-sm shadow-inner shadow-red-100"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KHU VỰC JAVASCRIPT GỌI API FASTAPI -->
+    <script>
+        let jsonResult = null;
+        let originalFileName = "de_thi";
+
+        document.getElementById('processBtn').addEventListener('click', async () => {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const fileInput = document.getElementById('pdfFile');
+            
+            if (!apiKey) {
+                alert("Vui lòng nhập khóa GEMINI API KEY!");
+                return;
+            }
+            if (fileInput.files.length === 0) {
+                alert("Thầy chưa chọn file PDF kìa!");
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            originalFileName = file.name.replace(".pdf", ""); // Cắt đuôi pdf ra
+            
+            // Xếp file vào Form Data theo chuẩn Fast API
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("api_key", apiKey);
+            
+            // Render Ui Transition (Hiển thị Loading, giấu giới thiệu)
+            document.getElementById('introBox').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('loading').classList.add('flex');
+            document.getElementById('result').classList.add('hidden');
+            document.getElementById('errorBox').classList.add('hidden');
+            
+            try {
+                // Fetch sang Route FastAPI cấu hình bên Vercel
+                const response = await fetch('/api/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                // Route phản hồi thành công (200)
+                if (response.ok && data.success) {
+                    jsonResult = data.json_data;
+                    document.getElementById('result').classList.remove('hidden');
+                } else {
+                    document.getElementById('errorBox').classList.remove('hidden');
+                    document.getElementById('errorBox').textContent = "❌ Lỗi từ Server:\n" + (data.detail || JSON.stringify(data));
+                }
+            } catch (error) {
+                // Báo lỗi 504 Timeout đặc trưng của Vercel Free Plan
+                document.getElementById('errorBox').classList.remove('hidden');
+                document.getElementById('errorBox').textContent = "⚠️ LỖI TIMEOUT VERCEL HOẶC TREO HỆ THỐNG!\n\nChi tiết: " + error.message + "\n\nGiải thích: Vercel Free Plan chỉ có sức chịu tải 10 giây cho mỗi cú click (mà Google OCR 1 trang thường mất ~7 giây). Thầy cố gắng cắt PDF thật ngắn (1 trang/lần) hoặc đổi sang Streamlit Cloud nhé!";
+            } finally {
+                // Tắt con xoay loading
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('loading').classList.remove('flex');
+            }
+        });
+        
+        // Sự kiện cho Nút tải xuống
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            if (!jsonResult) return;
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(jsonResult, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", originalFileName + "_TrắcNghiệm.json");
+            document.body.appendChild(downloadAnchorNode); // Bắt buộc append để ấn
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+    </script>
+</body>
+</html>
